@@ -54,15 +54,12 @@ public class DataMonitor implements Watcher, StatCallback {
      * Other classes use the DataMonitor by implementing this method
      */
     public interface DataMonitorListener {
-        /**
-         * The ZooKeeper session is no longer valid.
-         */
         void closing(KeeperException.Code rc);
+
+        void converge(String worker);
 
         // Choose a worker
         WorkersConfig onConfig(String config);
-
-        void converge(String worker);
     }
 
     public void process(WatchedEvent event) {

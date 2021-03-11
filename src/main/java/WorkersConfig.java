@@ -53,7 +53,7 @@ public class WorkersConfig {
         for (WorkerScale ws : cloned) {
             Integer currScale = currWorkers.get(ws.worker);
             // only 0 it out if no more workers are needed
-            if (currScale != null && ws.scale - currScale == 0) {
+            if (currScale != null && ws.scale - currScale <= 0) {
                 ws.scale = 0;
             }
         }
