@@ -48,6 +48,16 @@ public class Executor
 
     public void run() {
         dm = new DataMonitor(zk, znode, null, this);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("interrupted, ending zookeeper session");
+            dm.stop();
+            try {
+                zk.close();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }));
+
         dm.start();
 
         try {

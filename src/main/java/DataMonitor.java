@@ -19,6 +19,7 @@ public class DataMonitor implements Watcher, StatCallback {
     String configNode;
     Watcher chainedWatcher;
     boolean dead;
+    boolean stopped;
     DataMonitorListener listener;
 
     Map<String, Integer> currentConfig;
@@ -43,11 +44,16 @@ public class DataMonitor implements Watcher, StatCallback {
         this.configNode = znode;
         this.chainedWatcher = chainedWatcher;
         this.listener = listener;
+        this.stopped = false;
     }
 
     public void start() {
         // Check for existence of the configure node
-        zk.exists(configNode, true, this, null);
+        zk.exists(configNode, !stopped, this, null);
+    }
+
+    public void stop() {
+        stopped = true;
     }
 
     /**
@@ -84,7 +90,7 @@ public class DataMonitor implements Watcher, StatCallback {
             if (path != null && path.equals(configNode)) {
                 // Something has changed on the node, let's find out
                 switch (event.getType()) {
-                    case NodeDataChanged -> zk.exists(configNode, true, this, null);
+                    case NodeDataChanged -> zk.exists(configNode, !stopped, this, null);
 
                     case NodeChildrenChanged -> currentConfig();
                 }
@@ -110,7 +116,7 @@ public class DataMonitor implements Watcher, StatCallback {
                 return;
             }
             default -> {
-                zk.exists(configNode, true, this, null);
+                zk.exists(configNode, !stopped, this, null);
                 return;
             }
         }
@@ -197,8 +203,8 @@ public class DataMonitor implements Watcher, StatCallback {
         if (worker == null) {
             logger.warn("No room for me. leaving");
 
-            zk.exists(configNode, true);
-            zk.getChildren(configNode, true);
+            zk.exists(configNode, !stopped);
+            zk.getChildren(configNode, !stopped);
 
             return;
         }
@@ -212,7 +218,7 @@ public class DataMonitor implements Watcher, StatCallback {
         String createNode = createdPath.substring(configNode.length() + 1);
 
         // Make sure the workers "behind" me are not more than my index.
-        List<String> current = zk.getChildren(this.configNode, true);
+        List<String> current = zk.getChildren(this.configNode, !stopped);
         int smaller = 0;
         for (String curr : current) {
             logger.debug("curr: " + curr);
