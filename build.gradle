@@ -2,7 +2,6 @@ plugins {
     id 'java'
 }
 
-group 'org.example'
 version '1.0-SNAPSHOT'
 
 repositories {
@@ -25,7 +24,7 @@ test {
 jar {
     manifest {
         attributes(
-                "Implementation-Title": "Gradle",
+                "Implementation-Title": "ZGroup",
                 "Implementation-Version": archiveVersion,
                 "Main-Class": "Executor"
         )
