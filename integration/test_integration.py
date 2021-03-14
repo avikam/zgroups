@@ -3,6 +3,7 @@ import subprocess
 import signal
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 from typing import List, Tuple
 
@@ -110,11 +111,10 @@ def scale_config(request, zookeeper):
 @pytest.mark.parametrize("scale_config", (
         {"queue1": 2, "queue2": 1},
         {"queue1": 2, "queue2": 2},
+        {"queue1": 10, "queue2": 5},
 ), indirect=True)
 @pytest.mark.parametrize("scale", (
-        2,
-        5,
-        50,
+        2, 5, 50,
 ))
 def test_load(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, str]):
     conf, conf_name = scale_config
@@ -134,12 +134,41 @@ def test_load(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, st
 
     assert len(ls) == min(scale, sum(conf.values()))
 
-    for p in ps:
+    for i, p in enumerate(ps):
+        print("killing", i)
         p.send_signal(signal.SIGINT)
 
     for i, p in enumerate(ps):
-        print("killing", i)
         p.wait(timeout=5)
 
     starter = ZkCli("-server", zookeeper, "ls", conf_name)
     assert 0 == starter.exec().wait()
+
+
+@pytest.mark.parametrize("scale_config", (
+        {"queue1": 2, "queue2": 3},
+        {"queue1": 1, "queue2": 3, "queue3": 1},
+), indirect=True)
+@pytest.mark.parametrize("scale", (5,))
+def test_command(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, str], tmp_path):
+    conf, conf_name = scale_config
+
+    ps = []
+    for i in range(scale):
+        p = subprocess.Popen(
+            ["java", "-jar", jar_path, zookeeper, conf_name, "sh", "-c", f"printf $ZGROUPS_GROUP > {tmp_path}/{i}"],
+        )
+        ps.append(p)
+
+    time.sleep(scale * 0.5)
+
+    for i, p in enumerate(ps):
+        print("killing", i)
+        p.send_signal(signal.SIGINT)
+
+    results = []
+    for i, p in enumerate(ps):
+        p.wait(timeout=5)
+        results.append(open(tmp_path/str(i), 'r').read())
+
+    assert Counter(results) == conf

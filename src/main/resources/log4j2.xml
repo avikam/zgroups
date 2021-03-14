@@ -15,11 +15,11 @@
             <AppenderRef ref="Console"/>
         </Root>
 
-        <Logger name="Executor" level="info" additivity="false">
+        <Logger name="Executor" level="debug" additivity="false">
             <AppenderRef ref="Console2"/>
         </Logger>
 
-        <Logger name="DataMonitor" level="info" additivity="false">
+        <Logger name="DataMonitor" level="debug" additivity="false">
             <AppenderRef ref="Console2"/>
         </Logger>
     </Loggers>

@@ -1,4 +1,7 @@
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -9,17 +12,21 @@ import org.apache.zookeeper.ZooKeeper;
 
 public class Executor
         implements Watcher, Runnable, DataMonitor.DataMonitorListener {
+
     DataMonitor dm;
     ZooKeeper zk;
     String znode;
+    ProcessBuilder processBuilder;
 
     private static final Logger logger = LogManager.getLogger(Executor.class);
 
 
-    public Executor(String hostPort, String znode) throws IOException {
+    public Executor(String hostPort, String znode, ProcessBuilder processBuilder) throws IOException {
         this.znode = znode;
+        this.processBuilder = processBuilder;
 
         zk = new ZooKeeper(hostPort, 3000, this);
+
     }
 
     public static void main(String[] args) {
@@ -27,11 +34,18 @@ public class Executor
             System.err.println("USAGE: Executor hostPort znode");
             System.exit(2);
         }
+
         String hostPort = args[0];
         String znode = args[1];
 
+        ProcessBuilder processBuilder = null;
+        if (args.length > 2) {
+            processBuilder = new ProcessBuilder()
+                    .command(Arrays.copyOfRange(args, 2, args.length));
+        }
+
         try {
-            new Executor(hostPort, znode).run();
+            new Executor(hostPort, znode, processBuilder).run();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -84,7 +98,24 @@ public class Executor
     }
 
     @Override
-    public void converge(String worker) {
-        logger.warn("Using " + worker);
+    public void converge(String group) {
+        logger.debug("Using {}", group);
+        if (processBuilder == null) {
+            logger.warn("Using {} - No process is executed", group);
+            return;
+        }
+
+        ProcessBuilder pb = processBuilder.command(
+                processBuilder.command().stream().map(s -> s.equals("{}") ? group : s).collect(Collectors.toList())
+        );
+        
+        Map<String, String> env = pb.environment();
+        env.put("ZGROUPS_GROUP", group);
+
+        try {
+            pb.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
