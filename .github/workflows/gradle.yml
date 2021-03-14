@@ -66,6 +66,11 @@ jobs:
         run: pip install -r integration/requirements.txt
 
 
+      - name: Debugging with tmate
+        uses: mxschmitt/action-tmate@v3.3
+        timeout-minutes: 20
+
+
       - name: Integrations
         run: pytest
         working-directory: integration
