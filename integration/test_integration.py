@@ -71,6 +71,11 @@ def zk_parse_ls(output: bytes) -> List[str]:
     return res_line_txt.split(", ")
 
 
+def terminate_all(ps: List[subprocess.Popen]) -> None:
+    for i, p in enumerate(ps):
+        p.send_signal(signal.SIGINT)
+
+
 @pytest.fixture
 def zookeeper():
     connection_string = ZK_CONNECTION_STRING
@@ -134,10 +139,7 @@ def test_load(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, st
 
     assert len(ls) == min(scale, sum(conf.values()))
 
-    for i, p in enumerate(ps):
-        print("killing", i)
-        p.send_signal(signal.SIGINT)
-
+    terminate_all(ps)
     for i, p in enumerate(ps):
         p.wait(timeout=5)
 
@@ -156,19 +158,16 @@ def test_command(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict,
     ps = []
     for i in range(scale):
         p = subprocess.Popen(
-            ["java", "-jar", jar_path, zookeeper, conf_name, "sh", "-c", f"printf $ZGROUPS_GROUP > {tmp_path}/{i}"],
+            ["java", "-jar", jar_path, zookeeper, conf_name, "/bin/sh", "-c", f"printf $ZGROUPS_GROUP > {tmp_path}/{i}"],
         )
         ps.append(p)
 
     time.sleep(scale * 0.5)
 
-    for i, p in enumerate(ps):
-        print("killing", i)
-        p.send_signal(signal.SIGINT)
-
+    terminate_all(ps)
     results = []
     for i, p in enumerate(ps):
         p.wait(timeout=5)
-        results.append(open(tmp_path/str(i), 'r').read())
+        results.append(open(tmp_path / str(i), 'r').read())
 
     assert Counter(results) == conf
