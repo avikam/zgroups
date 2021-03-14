@@ -158,11 +158,21 @@ def test_command(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict,
     ps = []
     for i in range(scale):
         p = subprocess.Popen(
-            ["java", "-jar", jar_path, zookeeper, conf_name, "/bin/sh", "-c", f"printf $ZGROUPS_GROUP > {tmp_path}/{i}"],
+            ["java", "-jar", jar_path, zookeeper, conf_name, "/bin/sh", "-c", f"printf $ZGROUPS_GROUP > {tmp_path}/{i}"]
         )
         ps.append(p)
 
-    time.sleep(scale * 0.5)
+    # Wait for files
+    max_sleep_time = 0
+    for i in range(scale):
+        output_path = tmp_path / str(i)
+        for _ in range(max_sleep_time):
+            if output_path.exists():
+                break
+
+            time.sleep(1)
+        else:
+            raise TimeoutError(f"waiting for file {i}")
 
     terminate_all(ps)
     results = []
