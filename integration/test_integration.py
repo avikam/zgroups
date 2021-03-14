@@ -151,9 +151,9 @@ def test_load(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, st
         {"queue1": 2, "queue2": 3},
         {"queue1": 1, "queue2": 3, "queue3": 1},
 ), indirect=True)
-@pytest.mark.parametrize("scale", (5,))
-def test_command(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict, str], tmp_path):
+def test_command(zookeeper, jar_path: str, scale_config: Tuple[dict, str], tmp_path):
     conf, conf_name = scale_config
+    scale = sum(conf.values())
 
     ps = []
     for i in range(scale):
@@ -163,7 +163,7 @@ def test_command(zookeeper, scale: int, jar_path: str, scale_config: Tuple[dict,
         ps.append(p)
 
     # Wait for files
-    max_sleep_time = 0
+    max_sleep_time = 5
     for i in range(scale):
         output_path = tmp_path / str(i)
         for _ in range(max_sleep_time):

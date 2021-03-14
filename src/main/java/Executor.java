@@ -1,6 +1,9 @@
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -17,6 +20,7 @@ public class Executor
     ZooKeeper zk;
     String znode;
     ProcessBuilder processBuilder;
+    List<Process> processes;
 
     private static final Logger logger = LogManager.getLogger(Executor.class);
 
@@ -24,9 +28,9 @@ public class Executor
     public Executor(String hostPort, String znode, ProcessBuilder processBuilder) throws IOException {
         this.znode = znode;
         this.processBuilder = processBuilder;
+        this.processes = new LinkedList<>();
 
         zk = new ZooKeeper(hostPort, 3000, this);
-
     }
 
     public static void main(String[] args) {
@@ -62,15 +66,7 @@ public class Executor
 
     public void run() {
         dm = new DataMonitor(zk, znode, null, this);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.info("interrupted, ending zookeeper session");
-            dm.stop();
-            try {
-                zk.close();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownHandler));
 
         dm.start();
 
@@ -108,14 +104,39 @@ public class Executor
         ProcessBuilder pb = processBuilder.command(
                 processBuilder.command().stream().map(s -> s.equals("{}") ? group : s).collect(Collectors.toList())
         );
-        
+
         Map<String, String> env = pb.environment();
         env.put("ZGROUPS_GROUP", group);
 
         try {
-            pb.start();
+            Process p = pb.start();
+            logger.info("command: {} => pid: {}", pb.command(), p.pid());
+            processes.add(p);
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private void shutdownHandler() {
+        logger.info("interrupted, ending zookeeper session");
+        dm.stop();
+        try {
+            zk.close();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // Clear zombies?
+        for (Process p : processes) {
+            logger.debug("Killing & Cleaning process {}", p.pid());
+            try {
+                if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                    logger.warn("Forcibly killing {}", p.pid());
+                    p.destroyForcibly();
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
