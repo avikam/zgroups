@@ -1,3 +1,4 @@
+import os
 import subprocess
 import signal
 import tempfile
@@ -7,7 +8,14 @@ from typing import List, Tuple
 
 import pytest
 
-ZK_PATH = "/Users/avikamagur/Downloads/zk/apache-zookeeper-3.6.2-bin"
+# ZK_CONNECTION_STRING - Optional. If not specified, the test will start a zookeeper server
+ZK_CONNECTION_STRING = os.environ.get('ZK_CONNECTION_STRING')
+
+# ZK_HOME_DIR - Optional. The directory of the binary installation of zookeeper.
+ZK_HOME_DIR = Path(os.environ.get('ZK_HOME_DIR', '../apache-zookeeper-3.6.2-bin'))
+
+# LIBS_DIR - Optional. The directory in which the jar is located.
+LIBS_DIR = Path(os.environ.get('LIBS_DIR', '../build/libs'))
 
 
 class ZkCli:
@@ -22,7 +30,7 @@ class ZkCli:
     def exec(self):
         self.p = subprocess.Popen(
             ("bin/zkCli.sh",) + self.args,
-            cwd=ZK_PATH,
+            cwd=ZK_HOME_DIR,
             env={
                 "ZOO_LOG_DIR": self.log_dir.name,
                 "ZOO_LOG4J_PROP": "INFO,ROLLINGFILE"
@@ -64,10 +72,13 @@ def zk_parse_ls(output: bytes) -> List[str]:
 
 @pytest.fixture
 def zookeeper():
-    starter = subprocess.Popen(["bin/zkServer.sh", "start"], cwd=ZK_PATH)
-    starter.wait()
+    connection_string = ZK_CONNECTION_STRING
+    if not connection_string:
+        starter = subprocess.Popen(["bin/zkServer.sh", "start"], cwd=ZK_HOME_DIR)
+        starter.wait()
+        connection_string = "127.0.0.1:2181"
 
-    yield "127.0.0.1:2181"
+    yield connection_string
 
     # stopper = subprocess.Popen(["bin/zkServer.sh", "stop"], cwd=ZK_PATH)
     # stopper.wait()
@@ -75,9 +86,8 @@ def zookeeper():
 
 @pytest.fixture
 def jar_path():
-    root_dir = Path("/Users/avikamagur/Source/weav/worker-zoo")
-    jar_output = Path("build/libs/worker-zoo-1.0-SNAPSHOT.jar")
-    return root_dir / jar_output
+    jar_output = Path("zgroups-1.0-SNAPSHOT.jar")
+    return LIBS_DIR / jar_output
 
 
 @pytest.fixture

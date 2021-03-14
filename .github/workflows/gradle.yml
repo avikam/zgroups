@@ -11,9 +11,7 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
@@ -29,26 +27,49 @@ jobs:
         name: Package
         path: build/libs
 
-
   test:
-
+    needs: build
+    services:
+      zk:
+        image: zookeeper:3.6.2
+        ports:
+          - 2181:2181
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
           java-version: 15
+
+      - uses: actions/cache@v2
+        id: cahce-zk
+        with:
+          path: |
+            apache-zookeeper-3.6.2-bin
+          key: ${{ runner.os }}-apache-zookeeper-3.6.2
+
+      - name: get zk binaries
+        run: wget https://apache.claz.org/zookeeper/zookeeper-3.6.2/apache-zookeeper-3.6.2-bin.tar.gz && tar xf apache-zookeeper-3.6.2-bin.tar.gz
+        if: steps.cahce-zk.outputs.cache-hit != 'true'
+
+      - name: Download lib folder
+        uses: actions/download-artifact@v2
+        with:
+          name: Package
+
       - uses: actions/setup-python@v2
         with:
           python-version: 3.9.2
-      - name: Python dependencies
-        run: pip install -r integration/requirements.txt
 
       - name: Python dependencies
         run: pip install -r integration/requirements.txt
+
 
       - name: Integrations
         run: pytest
         working-directory: integration
+        env:
+          LIBS_DIR: ../
+          ZK_HOME_DIR: ../apache-zookeeper-3.6.2-bin
+          ZK_CONNECTION_STRING: 127.0.0.1:2181
