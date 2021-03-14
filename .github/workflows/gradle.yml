@@ -28,3 +28,27 @@ jobs:
       with:
         name: Package
         path: build/libs
+
+
+  test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 15
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.9.2
+      - name: Python dependencies
+        run: pip install -r integration/requirements.txt
+
+      - name: Python dependencies
+        run: pip install -r integration/requirements.txt
+
+      - name: Integrations
+        run: pytest
+        working-directory: integration
