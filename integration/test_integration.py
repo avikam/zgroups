@@ -13,7 +13,7 @@ import pytest
 ZK_CONNECTION_STRING = os.environ.get('ZK_CONNECTION_STRING')
 
 # ZK_HOME_DIR - Optional. The directory of the binary installation of zookeeper.
-ZK_HOME_DIR = Path(os.environ.get('ZK_HOME_DIR', '../apache-zookeeper-3.6.2-bin'))
+ZK_HOME_DIR = Path(os.environ.get('ZK_HOME_DIR', '../apache-zookeeper-3.7.0-bin'))
 
 # LIBS_DIR - Optional. The directory in which the jar is located.
 LIBS_DIR = Path(os.environ.get('LIBS_DIR', '../build/libs'))
