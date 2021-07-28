@@ -14,21 +14,28 @@ import org.apache.logging.log4j.Logger;
 import static org.apache.zookeeper.ZooDefs.Ids.ANYONE_ID_UNSAFE;
 
 public class DataMonitor implements Watcher, StatCallback {
-
+    // zookeeper handle
     ZooKeeper zk;
-    String configNode;
+
+    // Path to the node holding the desired configuration
+    private String configNode;
+
     Watcher chainedWatcher;
+
     boolean dead;
     boolean stopped;
     DataMonitorListener listener;
 
+    // The current distribution of nodes
     Map<String, Integer> currentConfig;
+
+    // The cluster configuration that should be distributed
     private String desiredConfig = "";
 
-    private boolean converged;
+    // The path this instance created specifying its allocation
+    private String currentPath = "";
 
     private static final Logger logger = LogManager.getLogger(DataMonitor.class);
-
 
     private final List<ACL> unsafeAcl = new ArrayList<>() {
         {
@@ -186,8 +193,12 @@ public class DataMonitor implements Watcher, StatCallback {
         }
     }
 
+    private boolean converged() {
+        return !currentPath.isEmpty();
+    }
+
     private void onConfig() throws KeeperException, InterruptedException {
-        if (converged) {
+        if (converged()) {
             return;
         }
 
@@ -212,7 +223,9 @@ public class DataMonitor implements Watcher, StatCallback {
         // Create ephemeral+counter node and make sure we did not exceed the amount of workers
         String createdPath = zk.create(
                 this.configNode + "/" + entryName(worker.worker),
-                null, unsafeAcl, CreateMode.EPHEMERAL_SEQUENTIAL
+                null,
+                unsafeAcl,
+                CreateMode.EPHEMERAL_SEQUENTIAL
         );
 
         String createNode = createdPath.substring(configNode.length() + 1);
@@ -242,7 +255,7 @@ public class DataMonitor implements Watcher, StatCallback {
             return;
         }
 
-        converged = true;
+        currentPath = createdPath;
         listener.converge(worker.worker);
     }
 

@@ -70,12 +70,10 @@ public class WorkersConfig {
         int j = 0;
 
         for (WorkerScale ws : config) {
-            System.out.print(ws.scale +  " + ");
             totalWeight += ws.scale;
             w[j++] = totalWeight;
         }
 
-        System.out.println(" = " + config.length);
         if (totalWeight == 0) {
             return null;
         }
