@@ -4,21 +4,21 @@ import string
 import subprocess
 import signal
 import tempfile
-from datetime import datetime
-
-from ipc import create_killer
+from select import select
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import List, Tuple
 
 import pytest
-
-# ZK_CONNECTION_STRING - Optional. If not specified, the test will start a zookeeper server
 import zmq
 
+from ipc import create_killer
 from log4j_template import log4j_file, log4j2_file
 
+interpreter = sys.executable
+
+# ZK_CONNECTION_STRING - Optional. If not specified, the test will start a zookeeper server
 ZK_CONNECTION_STRING = os.environ.get('ZK_CONNECTION_STRING', "127.0.0.1:2181")
 
 # ZK_HOME_DIR - Optional. The directory of the binary installation of zookeeper.
@@ -159,35 +159,72 @@ def scale_config(request, zookeeper):
     assert 0 == starter.exec().wait()
 
 
+@pytest.fixture
+def srv(request, tmp_path):
+    scale = request.param
+
+    srv = subprocess.Popen(
+        [interpreter, 'ipc.py', 'srv', str(tmp_path), str(scale)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    def reader():
+        live, dead = [], []
+        idle = 30
+        lst = live
+        for i in range(scale * 2 * 2):
+            r, _, _ = select([srv.stdout], [], [], 1)
+            if not r:
+                idle -= 1
+                if idle <= 0: raise Exception("srv didn't finish in time")
+                continue
+
+            idle = 30
+            line = srv.stdout.readline()[:-1].decode('utf8')
+            idx, what, ids = line.split(" ", )
+
+            pairs = [x.split("=") for x in ids.split(",") if x]
+            c = defaultdict(list)
+            for node_id, queue in pairs:
+                c[queue].append(node_id)
+
+            lst.append(c)
+
+            lst = dead if lst is live else live
+
+        return live, dead
+
+    try:
+        yield scale, reader
+    finally:
+        srv.send_signal(signal.SIGINT)
+        print("srv")
+        out, err = srv.communicate()
+        print("out", out.decode('utf8'))
+        print("out", err.decode('utf8'))
+
+
 @pytest.mark.parametrize("scale_config", (
         {"queue1": 2, "queue2": 1},
         {"queue1": 2, "queue2": 2, "queue3": 1},
         {"queue1": 10, "queue2": 5},
 ), indirect=True)
-@pytest.mark.parametrize("scale", (
+@pytest.mark.parametrize("srv", (
         2,
         5,
         30,
         # 40,
-))
-def test_load(tmp_path, scale, scale_config, zookeeper, listen_process):
-    interpreter = sys.executable
+), indirect=True)
+def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
+    scale, reader = srv
     conf, conf_name = scale_config
 
-    ipc_path = tmp_path / datetime.now().isoformat().replace(':', '-')
-    ipc_path.mkdir()
-
-    srv = subprocess.Popen(
-        [interpreter, 'ipc.py', 'srv', str(ipc_path), str(scale)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-
-    sock = create_killer(ipc_path)
+    sock = create_killer(tmp_path)
 
     entries = {}
     for i in range(scale):
-        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {ipc_path} {i}")
+        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}")
         # proc = subprocess.Popen([interpreter, "ipc.py", "node", str(ipc_path), str(i)], env={"ZGROUPS_GROUP": str(i)})
         entries[str(i)] = proc
 
@@ -216,27 +253,18 @@ def test_load(tmp_path, scale, scale_config, zookeeper, listen_process):
     if not idle:
         raise Exception("too long to find a working process")
 
-    from select import select
-
-    for i in range(scale * 2):
-        r, _, _ = select([srv.stdout], [], [], 120)
-        if r:
-            live = srv.stdout.readline()[:-1]
-            dead = srv.stdout.readline()[:-1]
-
-            print(live.decode('utf8').replace(str(tmp_path), ""))
-            print(dead.decode('utf8').replace(str(tmp_path), ""))
-        else:
-            break
-
-    print(entries)
-    srv.send_signal(signal.SIGINT)
-    print("srv")
-    out, err = srv.communicate()
-    print("out", out.decode('utf8'))
-    print("out", err.decode('utf8'))
-
     sock.close(0)
+
+    desired = sum(conf.values())
+    live, dead = reader()
+    # list of [{queue_x: [node1, node2, ...]} ], each entry is an run iteration
+
+    runs = [{queue: len(node_ids) for queue, node_ids in lv.items()} for lv in live]
+    # assert number of connected instances is <= of the desired
+    assert all(sum(lv.values()) <= desired for lv in runs)
+
+    # assert allocation is correct
+    assert all(lv.get(q, 0) <= conf[q] for lv in runs for q in set(conf.keys()) | set(lv.keys()))
 
     starter = ZkCli("-server", zookeeper, "ls", conf_name)
     assert 0 == starter.exec().wait()
