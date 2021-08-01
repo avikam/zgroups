@@ -1,8 +1,5 @@
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -13,8 +10,9 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 
+
 public class Executor
-        implements Watcher, Runnable, DataMonitor.DataMonitorListener {
+        implements Program, Watcher, Runnable, DataMonitor.DataMonitorListener {
 
     DataMonitor dm;
     ZooKeeper zk;
@@ -25,47 +23,31 @@ public class Executor
     private static final Logger logger = LogManager.getLogger(Executor.class);
 
 
-    public Executor(String hostPort, String znode, ProcessBuilder processBuilder) throws IOException {
+    public Executor(String hostPort, String znode, String[] args) throws IOException {
         this.znode = znode;
-        this.processBuilder = processBuilder;
         this.processes = new LinkedList<>();
 
+        if (args.length > 2) {
+            processBuilder = new ProcessBuilder().command(args);
+        }
+
         zk = new ZooKeeper(hostPort, 3000, this);
+        dm = new DataMonitor(zk, znode, null, this);
     }
 
-    public static void main(String[] args) {
-        if (args.length < 2) {
-            System.err.println("USAGE: Executor hostPort znode");
-            System.exit(2);
-        }
-
-        String hostPort = args[0];
-        String znode = args[1];
-
-        ProcessBuilder processBuilder = null;
-        if (args.length > 2) {
-            processBuilder = new ProcessBuilder()
-                    .command(Arrays.copyOfRange(args, 2, args.length));
-        }
-
+    public void main() {
         try {
-            new Executor(hostPort, znode, processBuilder).run();
+            run();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    /***************************************************************************
-     * We do process any events ourselves, we just need to forward them on.
-     *
-     * org.apache.zookeeper.Watcher#process(org.apache.zookeeper.proto.WatcherEvent)
-     */
     public void process(WatchedEvent event) {
         dm.process(event);
     }
 
     public void run() {
-        dm = new DataMonitor(zk, znode, null, this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownHandler));
 
         dm.start();
@@ -101,9 +83,10 @@ public class Executor
             return;
         }
 
-        ProcessBuilder pb = processBuilder.command(
-                processBuilder.command().stream().map(s -> s.equals("{}") ? group : s).collect(Collectors.toList())
-        );
+        ProcessBuilder pb = processBuilder
+                .command(
+                        processBuilder.command().stream().map(s -> s.equals("{}") ? group : s).collect(Collectors.toList())
+                ).inheritIO();
 
         Map<String, String> env = pb.environment();
         env.put("ZGROUPS_GROUP", group);
@@ -130,6 +113,7 @@ public class Executor
         for (Process p : processes) {
             logger.debug("Killing & Cleaning process {}", p.pid());
             try {
+                p.destroy();
                 if (!p.waitFor(5, TimeUnit.SECONDS)) {
                     logger.warn("Forcibly killing {}", p.pid());
                     p.destroyForcibly();
