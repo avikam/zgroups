@@ -16,7 +16,7 @@ def create_killer(ipc_path):
 
 
 def node_main(ipc_path, name_):
-    name = name_ # f"{os.environ['ZGROUPS_GROUP']}"
+    name = name_
 
     logging.basicConfig(filename=ipc_path + f".{name}.log", level=logging.DEBUG,
                         format="{asctime} {message}", style="{")
@@ -33,7 +33,7 @@ def node_main(ipc_path, name_):
     # mon.connect("inproc://monitor-req")
 
     logging.info("sending up")
-    req.send_string(f"up {name}")
+    req.send_string(f"up {name} {os.environ['ZGROUPS_GROUP']}")
     logging.info("up sent")
 
     for i in range(10):
@@ -52,7 +52,7 @@ def node_main(ipc_path, name_):
 
     def report_dying(*args):
         logging.info("sending down")
-        req.send_string(f"down {name}")
+        req.send_string(f"down {name} {os.environ['ZGROUPS_GROUP']}")
         logging.info("down sent")
         ok = req.recv_string()
         logging.info(ok)
@@ -75,19 +75,22 @@ def node_main(ipc_path, name_):
 def srv_main(ipc_path, scale):
     logging.basicConfig(filename=ipc_path + ".log", level=logging.DEBUG,
                         format="{asctime} {message}", style="{")
-    live = set()
-    dead = set()
+    live_nodes = dict()
+    dead_nodes = dict()
 
-    def handle(stat, node):
+    def handle(stat, node_id, group):
+        live = set(live_nodes.keys())
+        dead = set(dead_nodes.keys())
+
         if stat == 'up':
-            if node in live | dead:
+            if node_id in live | dead:
                 return False
-            live.add(node)
+            live_nodes[node_id] = group
         if stat == "down":
-            if node not in live or node in dead:
+            if node_id not in live or node_id in dead:
                 return False
-            live.remove(node)
-            dead.add(node)
+            live_nodes.pop(node_id)
+            dead_nodes[node_id] = group
         return True
 
     sock = ctx.socket(zmq.REP)
@@ -100,8 +103,8 @@ def srv_main(ipc_path, scale):
             msg = sock.recv_string()
             logging.info(f"RECVED {msg}")
 
-            stat, node = msg.split(" ")
-            res = handle(stat, node)
+            stat, node_id, group = msg.split(" ")
+            res = handle(stat, node_id, group)
             logging.info(f"RESP {res}")
             if res:
                 sock.send_string("OK")
@@ -110,16 +113,17 @@ def srv_main(ipc_path, scale):
 
             logging.info(f"SENT {res}")
 
-            print(i, "live", live)
-            print(i, "dead", dead)
+            print(i, "live", ','.join([f"{k}={v}" for k, v in live_nodes.items()]))
+            print(i, "dead", ','.join([f"{k}={v}" for k, v in dead_nodes.items()]))
             logging.info(f"rolling1")
             logging.info(f"rolling2")
 
-            if len(dead) == scale:
+            if len(dead_nodes) == scale:
                 return
     finally:
         sock.close()
         logging.info(f"finally")
+
 
 def main():
     from sys import argv
