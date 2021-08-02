@@ -1,3 +1,4 @@
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
 
@@ -7,6 +8,11 @@ public class WorkersConfig {
     static class WorkerScale {
         public String worker;
         public Integer scale;
+
+        @Override
+        public String toString() {
+            return "{" + worker + ':' + + scale + '}';
+        }
     }
 
     private WorkerScale[] config;
@@ -98,4 +104,10 @@ public class WorkersConfig {
         return config[hi];
     }
 
+    @Override
+    public String toString() {
+        return "WorkersConfig{" +
+                "config=" + Arrays.toString(config) +
+                '}';
+    }
 }

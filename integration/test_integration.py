@@ -217,6 +217,10 @@ def srv(request, tmp_path):
         # 40,
 ), indirect=True)
 def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
+    """
+    Run a lard amount of processes ar once and kill the ones that were assigned already to a group.
+    This process is expected to allocate any residual processes to a group once space is available.
+    """
     scale, reader = srv
     conf, conf_name = scale_config
 
@@ -271,6 +275,7 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
 
 @pytest.mark.parametrize("scale_config", (
+        {"queue1": 1, "queue2": 1},
         {"queue1": 2, "queue2": 3},
         {"queue1": 1, "queue2": 3, "queue3": 1},
         {"queue1": 1, "queue2": 1, "queue3": 1},
@@ -278,6 +283,10 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
         {"queue1": 3, "queue2": 4, "queue3": 2, "queue4": 2, "queue5": 5},
 ), indirect=True)
 def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_process):
+    """
+    Start a precise amount of processes to be distributed across the cluster.
+    We verify the process allocation to a group is according to the configuration.
+    """
     conf, conf_name = scale_config
     scale = sum(conf.values())
 
@@ -289,7 +298,13 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     results = []
     for i, p in enumerate(ps):
         # all lines are only 6 bytes long. careful if it's ever changed...
-        line = p.stdout.read(6).decode('utf8')
+        line = ""
+        while len(line) < 6:
+            r, _, _ = select([p.stdout], [], [], 3)
+            if r:
+                line += p.stdout.read(6 - len(line)).decode('utf8')
+            else:
+                raise Exception(f"process {i}, {p.args}")
         results.append(line)
 
     # Kill processes

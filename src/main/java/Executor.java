@@ -44,7 +44,7 @@ public class Executor
     }
 
     public void process(WatchedEvent event) {
-        dm.process(event);
+        logger.info("Got unwatched event {}", event);
     }
 
     public void run() {
@@ -68,11 +68,6 @@ public class Executor
         synchronized (this) {
             notifyAll();
         }
-    }
-
-    @Override
-    public WorkersConfig onConfig(String config) {
-        return WorkersConfig.parseConfig(config);
     }
 
     @Override
