@@ -228,7 +228,8 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
     entries = {}
     for i in range(scale):
-        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}")
+        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}",
+                              str(Path(tmp_path / f"{i}.log")))
         # proc = subprocess.Popen([interpreter, "ipc.py", "node", str(ipc_path), str(i)], env={"ZGROUPS_GROUP": str(i)})
         entries[str(i)] = proc
 
@@ -268,7 +269,9 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
     assert all(sum(lv.values()) <= desired for lv in runs)
 
     # assert allocation is correct
-    assert all(lv.get(q, 0) <= conf[q] for lv in runs for q in set(conf.keys()) | set(lv.keys()))
+    for lv in runs:
+        for q in set(conf.keys()) | set(lv.keys()):
+            assert lv.get(q, 0) <= conf[q], lv
 
     starter = ZkCli("-server", zookeeper, "ls", conf_name)
     assert 0 == starter.exec().wait()
