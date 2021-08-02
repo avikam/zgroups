@@ -130,7 +130,7 @@ public class DataMonitor {
             candidateWorker = nodeConfig.randomize();
             if (candidateWorker == null) {
                 logger.warn("No room for me. pending for updates");
-                restart();
+                clusterConfFinder.Find();
 
                 return;
             }
@@ -145,8 +145,8 @@ public class DataMonitor {
 
             logger.info("Candidate " + currentPath + ", Relisting children to validate this choice");
             clusterConfFinder.Find();
-            return;
 
+            return;
         } else {
             String createNode = currentPath.substring(configNodePath.length() + 1);
 
@@ -168,9 +168,11 @@ public class DataMonitor {
             if (smaller >= candidateWorker.scale) {
                 logger.warn("Too crowded, leaving");
                 zk.delete(currentPath, -1);
-                currentPath = "";
 
-                restart();
+                currentPath = "";
+                candidateWorker = null;
+
+                clusterConfFinder.Find();
                 return;
             }
         }
