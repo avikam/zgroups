@@ -121,13 +121,14 @@ public class DataMonitor {
         }
 
         logger.info("effective config {}", currentClusterConfig);
+        logger.info("desired config {}", nodeConfig);
 
         // Create ephemeral+counter node and make sure we did not exceed the amount of workers
         if (currentPath.isEmpty()) {
-            nodeConfig.subtract(currentClusterConfig);
-            logger.info("choosing from {}", nodeConfig);
+            WorkersConfig avail = nodeConfig.subtract(currentClusterConfig);
+            logger.info("choosing from {}", avail);
 
-            candidateWorker = nodeConfig.randomize();
+            candidateWorker = avail.randomize();
             if (candidateWorker == null) {
                 logger.warn("No room for me. pending for updates");
                 clusterConfFinder.Find();
@@ -161,11 +162,13 @@ public class DataMonitor {
                 }
             }
 
+            Integer maxAllowed = nodeConfig.find(candidateWorker.worker).scale;
+
             logger.info("Created " + createNode + ", there are " + smaller +
-                    " before me while there could be, including me, at most" + candidateWorker.scale
+                    " before me while there could be, including me, at most" + maxAllowed
             );
 
-            if (smaller >= candidateWorker.scale) {
+            if (smaller >= maxAllowed) {
                 logger.warn("Too crowded, leaving");
                 zk.delete(currentPath, -1);
 

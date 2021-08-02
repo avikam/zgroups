@@ -275,6 +275,7 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
 
 @pytest.mark.parametrize("scale_config", (
+        {"queue1": 3},
         {"queue1": 1, "queue2": 1},
         {"queue1": 2, "queue2": 3},
         {"queue1": 1, "queue2": 3, "queue3": 1},
@@ -296,16 +297,14 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     ]
 
     results = []
-    for i, p in enumerate(ps):
-        # all lines are only 6 bytes long. careful if it's ever changed...
-        line = ""
-        while len(line) < 6:
-            r, _, _ = select([p.stdout], [], [], 3)
-            if r:
-                line += p.stdout.read(6 - len(line)).decode('utf8')
-            else:
-                raise Exception(f"process {i}, {p.args}")
-        results.append(line)
+    to_read = [p.stdout for p in ps]
+    while to_read:
+        rs, _, _ = select(to_read, [], [], 10)
+        if rs:
+            results.append(rs[0].read(6).decode('utf8'))
+            to_read.remove(rs[0])
+        else:
+            raise TimeoutError()
 
     # Kill processes
     terminate_all(ps)
