@@ -237,6 +237,10 @@ public class DataMonitor {
         }
 
         private void find() {
+            if (parent.converged()) {
+                return;
+            }
+
             zk.getChildren(configNode, this, this, null);
         }
 
