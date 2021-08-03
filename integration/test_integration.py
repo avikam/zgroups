@@ -320,7 +320,7 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     results = []
     to_read = [p.stdout for p in ps]
     while to_read:
-        rs, _, _ = select(to_read, [], [], 10)
+        rs, _, _ = select(to_read, [], [], 60)
         if rs:
             results.append(rs[0].read(6).decode('utf8'))
             to_read.remove(rs[0])
