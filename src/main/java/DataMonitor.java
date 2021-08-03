@@ -190,8 +190,6 @@ public class DataMonitor {
 
                 currentPath = "";
                 candidateWorker = null;
-
-                clusterConfFinder.Find();
                 return;
             }
         }
