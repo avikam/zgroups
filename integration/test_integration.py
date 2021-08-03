@@ -4,6 +4,7 @@ import string
 import subprocess
 import signal
 import tempfile
+from itertools import zip_longest
 from select import select
 import sys
 from collections import Counter, defaultdict
@@ -30,6 +31,13 @@ LIBS_DIR = Path(os.environ.get('LIBS_DIR', '../build/libs'))
 JAR_NAME = 'zgroups-2.0-SNAPSHOT.jar'
 
 JAR_PATH = str((LIBS_DIR / JAR_NAME).absolute())
+
+
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
 
 
 class ZkCli:
@@ -206,6 +214,7 @@ def srv(request, tmp_path):
 
 
 @pytest.mark.parametrize("scale_config", (
+        {"queue1": 2},
         {"queue1": 2, "queue2": 1},
         {"queue1": 2, "queue2": 2, "queue3": 1},
         {"queue1": 10, "queue2": 5},
@@ -213,20 +222,31 @@ def srv(request, tmp_path):
 @pytest.mark.parametrize("srv", (
         2,
         5,
+        10,
         30,
-        # 40,
+        40,
 ), indirect=True)
-def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
+def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
+    """
+    Run a large amount of processes ar once and kill them after they are assigned to a group.
+    This process is expected to allocate any residual processes to a group once space is available.
+    """
     scale, reader = srv
     conf, conf_name = scale_config
-
+    desired = sum(conf.values())
     sock = create_killer(tmp_path)
 
     entries = {}
-    for i in range(scale):
-        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}")
-        # proc = subprocess.Popen([interpreter, "ipc.py", "node", str(ipc_path), str(i)], env={"ZGROUPS_GROUP": str(i)})
-        entries[str(i)] = proc
+    chunks = grouper(range(scale), desired)
+
+    # we will chunk the process creation b/c the test consumes too much resources for the testing instance.
+    def produce():
+        for i in next(chunks, []):
+            if i is None: return
+            proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}",
+                                  str(Path(tmp_path / f"{i}.log")))
+            entries[str(i)] = proc
+    produce()
 
     poller = zmq.Poller()
     poller.register(sock, zmq.POLLIN)
@@ -237,7 +257,7 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
         if not socks:
             idle -= 1
-            print("searching...", [p.args for p in entries.values()])
+            print("waiting for one of:", [p.args for p in entries.values()])
             continue
         else:
             print("recovered")
@@ -249,50 +269,67 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
         proc = entries.pop(proc_id)
         proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
+        if len(entries) <= desired // 2: produce()
 
     if not idle:
         raise Exception("too long to find a working process")
 
     sock.close(0)
 
-    desired = sum(conf.values())
     live, dead = reader()
     # list of [{queue_x: [node1, node2, ...]} ], each entry is an run iteration
 
     runs = [{queue: len(node_ids) for queue, node_ids in lv.items()} for lv in live]
     # assert number of connected instances is <= of the desired
-    assert all(sum(lv.values()) <= desired for lv in runs)
+    for lv in runs:
+        assert sum(lv.values()) <= desired, lv
 
     # assert allocation is correct
-    assert all(lv.get(q, 0) <= conf[q] for lv in runs for q in set(conf.keys()) | set(lv.keys()))
+    for lv in runs:
+        for q in set(conf.keys()) | set(lv.keys()):
+            assert lv.get(q, 0) <= conf[q], lv
 
     starter = ZkCli("-server", zookeeper, "ls", conf_name)
     assert 0 == starter.exec().wait()
 
 
 @pytest.mark.parametrize("scale_config", (
+        {"queue1": 3},
+        {"queue1": 1, "queue2": 1},
         {"queue1": 2, "queue2": 3},
         {"queue1": 1, "queue2": 3, "queue3": 1},
         {"queue1": 1, "queue2": 1, "queue3": 1},
         {"queue1": 1, "queue2": 1, "queue3": 0},
         {"queue1": 3, "queue2": 4, "queue3": 2, "queue4": 2, "queue5": 5},
+        {q: 1 for q in ["".join(random.choice(string.ascii_lowercase) for i in range(6)) for j in range(20)]},
 ), indirect=True)
 def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_process):
+    """
+    Start a precise amount of processes to be distributed across the cluster.
+    We verify the process allocation to a group is according to the configuration.
+    """
     conf, conf_name = scale_config
     scale = sum(conf.values())
 
     ps = [
-        listen_process(zookeeper, conf_name, f"printf $ZGROUPS_GROUP", str(Path(tmp_path / f"{i}.log")))
+        listen_process(zookeeper, conf_name, f"printf $ZGROUPS_GROUP && sleep 600", str(Path(tmp_path / f"{i}.log")))
         for i in range(scale)
     ]
 
     results = []
-    for i, p in enumerate(ps):
-        # all lines are only 6 bytes long. careful if it's ever changed...
-        line = p.stdout.read(6).decode('utf8')
-        results.append(line)
+    to_read = [p.stdout for p in ps]
+    while to_read:
+        rs, _, _ = select(to_read, [], [], 60)
+        if rs:
+            results.append(rs[0].read(6).decode('utf8'))
+            to_read.remove(rs[0])
+        else:
+            raise TimeoutError()
 
     # Kill processes
-    terminate_all(ps)
+    for p in ps:
+        p.send_signal(signal.SIGINT)
+        p.wait(60)
 
     assert dict(Counter(results)) == {k: v for k, v in conf.items() if v}

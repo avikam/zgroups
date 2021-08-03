@@ -35,7 +35,8 @@ task fatJar(type: Jar) {
         attributes(
                 "Implementation-Title": "ZGroup",
                 "Implementation-Version": archiveVersion,
-                "Main-Class": "Main"
+                "Main-Class": "Main",
+                'Multi-Release': 'true'
         )
     }
 

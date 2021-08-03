@@ -25,17 +25,14 @@ status = warn
 dest = err
 name = PropertiesConfig
  
-property.filename = %(FILE_NAME)s2
- 
-filter.threshold.type = ThresholdFilter
-filter.threshold.level = debug
+property.filename = %(FILE_NAME)s.2
  
 appender.file.type = File
-appender.file.name = MyFile
+appender.file.name = MyFILE
 appender.file.fileName = ${filename}
 appender.file.layout.type = PatternLayout
 appender.file.layout.pattern = %%d %%p %%C{1.} [%%t] %%m%%n
  
-rootLogger.level = debug 
-rootLogger.appenderRef.stdout.ref = MyFILE
+rootLogger.level = DEBUG
+rootLogger.appenderRef.file.ref = MyFILE
 """

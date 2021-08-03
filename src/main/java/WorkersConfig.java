@@ -1,3 +1,4 @@
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
 
@@ -5,8 +6,18 @@ public class WorkersConfig {
     static final String SEP = ";";
 
     static class WorkerScale {
-        public String worker;
-        public Integer scale;
+        public final String worker;
+        public final Integer scale;
+
+        WorkerScale(String worker, Integer scale) {
+            this.worker = worker;
+            this.scale = scale;
+        }
+
+        @Override
+        public String toString() {
+            return "{" + worker + ':' + + scale + '}';
+        }
     }
 
     private WorkerScale[] config;
@@ -27,12 +38,7 @@ public class WorkersConfig {
             String[] workerScale = l.split(":");
 
             final int workerWeight = Integer.parseInt(workerScale[1]);
-            WorkerScale entry = new WorkerScale() {
-                {
-                    worker = workerScale[0];
-                    scale = workerWeight;
-                }
-            };
+            WorkerScale entry = new WorkerScale(workerScale[0], workerWeight);
 
             totalWeight += workerWeight;
 
@@ -48,14 +54,16 @@ public class WorkersConfig {
     }
 
     public WorkersConfig subtract(Map<String, Integer> currWorkers) {
-        WorkerScale[] cloned = config.clone();
+        WorkerScale[] cloned = new WorkerScale[config.length];
 
-        for (WorkerScale ws : cloned) {
+        int i=0;
+        for (WorkerScale ws : config) {
             Integer currScale = currWorkers.get(ws.worker);
-            // only 0 it out if no more workers are needed
-            if (currScale != null && ws.scale - currScale <= 0) {
-                ws.scale = 0;
+            if (currScale == null) {
+                currScale = 0;
             }
+
+            cloned[i++] = new WorkerScale(ws.worker, Math.max(0, ws.scale - currScale));
         }
 
         WorkersConfig result = new WorkersConfig();
@@ -98,4 +106,20 @@ public class WorkersConfig {
         return config[hi];
     }
 
+    public WorkerScale find(String worker) {
+        for (WorkerScale ws : config) {
+            if (ws.worker.equals(worker)) {
+                return ws;
+            }
+        }
+
+        return null;
+    }
+
+    @Override
+    public String toString() {
+        return "WorkersConfig{" +
+                "config=" + Arrays.toString(config) +
+                '}';
+    }
 }

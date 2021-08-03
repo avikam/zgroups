@@ -18,14 +18,14 @@ public class Executor
     ZooKeeper zk;
     String znode;
     ProcessBuilder processBuilder;
-    List<Process> processes;
+    Process process;
+
 
     private static final Logger logger = LogManager.getLogger(Executor.class);
 
 
     public Executor(String hostPort, String znode, String[] args) throws IOException {
         this.znode = znode;
-        this.processes = new LinkedList<>();
 
         if (args.length > 2) {
             processBuilder = new ProcessBuilder().command(args);
@@ -44,7 +44,7 @@ public class Executor
     }
 
     public void process(WatchedEvent event) {
-        dm.process(event);
+        logger.info("Got unwatched event {}", event);
     }
 
     public void run() {
@@ -54,7 +54,7 @@ public class Executor
 
         try {
             synchronized (this) {
-                while (!dm.dead) {
+                while (!dm.stopped()) {
                     wait();
                 }
             }
@@ -68,11 +68,6 @@ public class Executor
         synchronized (this) {
             notifyAll();
         }
-    }
-
-    @Override
-    public WorkersConfig onConfig(String config) {
-        return WorkersConfig.parseConfig(config);
     }
 
     @Override
@@ -92,12 +87,39 @@ public class Executor
         env.put("ZGROUPS_GROUP", group);
 
         try {
-            Process p = pb.start();
-            logger.info("command: {} => pid: {}", pb.command(), p.pid());
-            processes.add(p);
+            process = pb.start();
+            logger.info("command: {} => pid: {}", pb.command(), process.pid());
         } catch (IOException e) {
             e.printStackTrace();
+            dm.stop();
+            synchronized (this) {
+                notifyAll();
+            }
+
+            return;
         }
+
+        Thread processWatcher = new Thread(() -> {
+            while (true) {
+                try {
+                    if (process.waitFor(500, TimeUnit.MILLISECONDS)) {
+                         break;
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return;
+                }
+            }
+
+            logger.info("Process is terminated");
+            synchronized (this) {
+                dm.stop();
+                notifyAll();
+            }
+        });
+
+        processWatcher.setName("process-watcher");
+        processWatcher.start();
     }
 
     private void shutdownHandler() {
@@ -109,14 +131,13 @@ public class Executor
             e.printStackTrace();
         }
 
-        // Clear zombies?
-        for (Process p : processes) {
-            logger.debug("Killing & Cleaning process {}", p.pid());
+        if (process != null) {
+            logger.debug("Killing & Cleaning process {}", process.pid());
             try {
-                p.destroy();
-                if (!p.waitFor(5, TimeUnit.SECONDS)) {
-                    logger.warn("Forcibly killing {}", p.pid());
-                    p.destroyForcibly();
+                process.destroy();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    logger.warn("Forcibly killing {}", process.pid());
+                    process.destroyForcibly();
                 }
             } catch (InterruptedException e) {
                 e.printStackTrace();
