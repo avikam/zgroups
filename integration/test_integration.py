@@ -218,7 +218,7 @@ def srv(request, tmp_path):
         30,
         40,
 ), indirect=True)
-def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
+def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
     """
     Run a large amount of processes ar once and kill them after they are assigned to a group.
     This process is expected to allocate any residual processes to a group once space is available.
