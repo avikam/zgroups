@@ -4,6 +4,7 @@ import string
 import subprocess
 import signal
 import tempfile
+from itertools import zip_longest
 from select import select
 import sys
 from collections import Counter, defaultdict
@@ -30,6 +31,13 @@ LIBS_DIR = Path(os.environ.get('LIBS_DIR', '../build/libs'))
 JAR_NAME = 'zgroups-2.0-SNAPSHOT.jar'
 
 JAR_PATH = str((LIBS_DIR / JAR_NAME).absolute())
+
+
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
 
 
 class ZkCli:
@@ -225,14 +233,20 @@ def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
     """
     scale, reader = srv
     conf, conf_name = scale_config
-
+    desired = sum(conf.values())
     sock = create_killer(tmp_path)
 
     entries = {}
-    for i in range(scale):
-        proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}",
-                              str(Path(tmp_path / f"{i}.log")))
-        entries[str(i)] = proc
+    chunks = grouper(range(scale), desired)
+
+    # we will chunk the process creation b/c the test consumes too much resources for the testing instance.
+    def produce():
+        for i in next(chunks, []):
+            if i is None: return
+            proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}",
+                                  str(Path(tmp_path / f"{i}.log")))
+            entries[str(i)] = proc
+    produce()
 
     poller = zmq.Poller()
     poller.register(sock, zmq.POLLIN)
@@ -243,7 +257,7 @@ def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
 
         if not socks:
             idle -= 1
-            print("searching...", [p.args for p in entries.values()])
+            print("waiting for one of:", [p.args for p in entries.values()])
             continue
         else:
             print("recovered")
@@ -256,13 +270,13 @@ def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
         proc = entries.pop(proc_id)
         proc.send_signal(signal.SIGINT)
         proc.wait(timeout=10)
+        if len(entries) <= desired // 2: produce()
 
     if not idle:
         raise Exception("too long to find a working process")
 
     sock.close(0)
 
-    desired = sum(conf.values())
     live, dead = reader()
     # list of [{queue_x: [node1, node2, ...]} ], each entry is an run iteration
 
@@ -316,6 +330,6 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     # Kill processes
     for p in ps:
         p.send_signal(signal.SIGINT)
-        p.wait(10)
+        p.wait(60)
 
     assert dict(Counter(results)) == {k: v for k, v in conf.items() if v}
