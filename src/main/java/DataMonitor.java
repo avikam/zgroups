@@ -19,8 +19,7 @@ public class DataMonitor {
 
     Watcher chainedWatcher;
 
-    boolean dead;
-    boolean stopped;
+    private boolean stopped;
     DataMonitorListener listener;
 
     // The current distribution of nodes. Read from the ephemeral children of configNodePath
@@ -76,6 +75,10 @@ public class DataMonitor {
         stopped = true;
     }
 
+    public boolean stopped() {
+        return stopped;
+    }
+
     /**
      * Other classes use the DataMonitor by implementing this method
      */
@@ -85,7 +88,7 @@ public class DataMonitor {
     }
 
     private void zkStopping(KeeperException.Code rc) {
-        dead = true;
+        stopped = true;
         listener.closing(rc);
     }
 
@@ -151,15 +154,28 @@ public class DataMonitor {
         } else {
             String createNode = currentPath.substring(configNodePath.length() + 1);
 
+            // we could be called because of an old watcher.
+            // this will set to true if the candidate node is listen within the children
+            boolean isSync = false;
+
             // Make sure the workers "behind" me are not more than my index.
             List<String> current = currChildren; // has to be a refreshed list
             int smaller = 0;
             for (String curr : current) {
+                if (curr.equals(createNode)) {
+                    isSync = true;
+                }
+
                 logger.debug("curr: " + curr);
 
                 if (curr.startsWith(candidateWorker.worker)) {
                     smaller += (createNode.compareTo(curr) > 0) ? 1 : 0;
                 }
+            }
+
+            if (!isSync) {
+                logger.info("candidate node is not listed. Waiting for another call");
+                return;
             }
 
             Integer maxAllowed = nodeConfig.find(candidateWorker.worker).scale;
@@ -241,7 +257,7 @@ public class DataMonitor {
                 return;
             }
 
-            zk.getChildren(configNode, this, this, null);
+            zk.getChildren(configNode, parent.stopped ? null : this, this, null);
         }
 
         public void process(WatchedEvent event) {
@@ -287,19 +303,17 @@ public class DataMonitor {
 
         private String latestConfigValue;
 
-        private Boolean stopped;
 
         ConfigurationNodeFinder(DataMonitor dm, ZooKeeper zk, String configNode) {
             this.parent = dm;
             this.zk = zk;
             this.configNode = configNode;
 
-            this.stopped = false;
             this.latestConfigValue = "";
         }
 
         public void Find() {
-            zk.exists(configNode, !stopped, this, null);
+            zk.exists(configNode, !parent.stopped, this, null);
         }
 
         public void processResult(int rc_, String path, Object ctx, Stat stat) {
@@ -315,7 +329,7 @@ public class DataMonitor {
                     return;
                 }
                 default -> {
-                    zk.exists(configNode, !stopped, this, null);
+                    zk.exists(configNode, !parent.stopped, this, null);
                     return;
                 }
             }

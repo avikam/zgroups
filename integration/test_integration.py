@@ -206,6 +206,7 @@ def srv(request, tmp_path):
 
 
 @pytest.mark.parametrize("scale_config", (
+        {"queue1": 2},
         {"queue1": 2, "queue2": 1},
         {"queue1": 2, "queue2": 2, "queue3": 1},
         {"queue1": 10, "queue2": 5},
@@ -213,12 +214,13 @@ def srv(request, tmp_path):
 @pytest.mark.parametrize("srv", (
         2,
         5,
+        10,
         30,
-        # 40,
+        40,
 ), indirect=True)
 def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
     """
-    Run a lard amount of processes ar once and kill the ones that were assigned already to a group.
+    Run a large amount of processes ar once and kill them after they are assigned to a group.
     This process is expected to allocate any residual processes to a group once space is available.
     """
     scale, reader = srv
@@ -230,7 +232,6 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
     for i in range(scale):
         proc = listen_process(zookeeper, conf_name, f"{interpreter} ipc.py node {tmp_path} {i}",
                               str(Path(tmp_path / f"{i}.log")))
-        # proc = subprocess.Popen([interpreter, "ipc.py", "node", str(ipc_path), str(i)], env={"ZGROUPS_GROUP": str(i)})
         entries[str(i)] = proc
 
     poller = zmq.Poller()
@@ -254,6 +255,7 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
         proc = entries.pop(proc_id)
         proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=2)
 
     if not idle:
         raise Exception("too long to find a working process")
@@ -266,7 +268,8 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
 
     runs = [{queue: len(node_ids) for queue, node_ids in lv.items()} for lv in live]
     # assert number of connected instances is <= of the desired
-    assert all(sum(lv.values()) <= desired for lv in runs)
+    for lv in runs:
+        assert sum(lv.values()) <= desired, lv
 
     # assert allocation is correct
     for lv in runs:
@@ -285,6 +288,7 @@ def test_load(tmp_path, srv, scale_config, zookeeper, listen_process):
         {"queue1": 1, "queue2": 1, "queue3": 1},
         {"queue1": 1, "queue2": 1, "queue3": 0},
         {"queue1": 3, "queue2": 4, "queue3": 2, "queue4": 2, "queue5": 5},
+        {q: 1 for q in ["".join(random.choice(string.ascii_lowercase) for i in range(6)) for j in range(20)]},
 ), indirect=True)
 def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_process):
     """
@@ -295,7 +299,7 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     scale = sum(conf.values())
 
     ps = [
-        listen_process(zookeeper, conf_name, f"printf $ZGROUPS_GROUP", str(Path(tmp_path / f"{i}.log")))
+        listen_process(zookeeper, conf_name, f"printf $ZGROUPS_GROUP && sleep 600", str(Path(tmp_path / f"{i}.log")))
         for i in range(scale)
     ]
 
@@ -310,6 +314,8 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
             raise TimeoutError()
 
     # Kill processes
-    terminate_all(ps)
+    for p in ps:
+        p.send_signal(signal.SIGINT)
+        p.wait(2)
 
     assert dict(Counter(results)) == {k: v for k, v in conf.items() if v}
