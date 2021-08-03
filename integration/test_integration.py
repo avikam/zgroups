@@ -255,7 +255,7 @@ def test_contention(tmp_path, srv, scale_config, zookeeper, listen_process):
 
         proc = entries.pop(proc_id)
         proc.send_signal(signal.SIGINT)
-        proc.wait(timeout=2)
+        proc.wait(timeout=10)
 
     if not idle:
         raise Exception("too long to find a working process")
@@ -316,6 +316,6 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
     # Kill processes
     for p in ps:
         p.send_signal(signal.SIGINT)
-        p.wait(2)
+        p.wait(10)
 
     assert dict(Counter(results)) == {k: v for k, v in conf.items() if v}
