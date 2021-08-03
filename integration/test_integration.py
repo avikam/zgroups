@@ -343,7 +343,7 @@ def test_dead_process_kills_listener(zookeeper, scale_config: Tuple[dict, str], 
     conf, conf_name = scale_config
 
     p = listen_process(
-        zookeeper, conf_name, f"python -c 'import os,time;print(os.getpid());time.sleep(6000)'",
+        zookeeper, conf_name, f"python -c 'import os,time,sys;print(os.getpid());sys.stdout.flush();time.sleep(6000)'",
         str(Path(tmp_path / f"log.log"))
     )
 
