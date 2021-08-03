@@ -333,3 +333,20 @@ def test_command(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_pro
         p.wait(60)
 
     assert dict(Counter(results)) == {k: v for k, v in conf.items() if v}
+
+
+@pytest.mark.parametrize("scale_config", (
+        {"queue1": 1},
+), indirect=True)
+@pytest.mark.parametrize("sig", (signal.SIGINT, signal.SIGTERM, signal.SIGKILL))
+def test_dead_process_kills_listener(zookeeper, scale_config: Tuple[dict, str], tmp_path, listen_process, sig):
+    conf, conf_name = scale_config
+
+    p = listen_process(
+        zookeeper, conf_name, f"python -c 'import os,time;print(os.getpid());time.sleep(6000)'",
+        str(Path(tmp_path / f"log.log"))
+    )
+
+    pid = int(p.stdout.readline()[:-1])
+    os.kill(pid, sig)
+    p.wait(1)
