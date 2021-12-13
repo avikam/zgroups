@@ -28,7 +28,7 @@ ZK_HOME_DIR = Path(os.environ.get('ZK_HOME_DIR', '../apache-zookeeper-3.7.0-bin'
 # LIBS_DIR - Optional. The directory in which the jar is located.
 LIBS_DIR = Path(os.environ.get('LIBS_DIR', '../build/libs'))
 
-JAR_NAME = 'zgroups-3.0-SNAPSHOT.jar'
+JAR_NAME = 'zgroups-4.0-SNAPSHOT.jar'
 
 JAR_PATH = str((LIBS_DIR / JAR_NAME).absolute())
 
