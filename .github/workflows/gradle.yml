@@ -84,10 +84,14 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: Package
+      - id: get-filename
+        run: |
+          bin=$(ls zgroups-*)
+          echo "::set-output name=bin::$bin"
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: zgroups-1.0-SNAPSHOT.jar
+          files: ${{steps.get-filename.outputs.bin}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
